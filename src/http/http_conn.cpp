@@ -26,6 +26,12 @@ const char *error_404_form = "The requested file was not found on this server.\n
 const char *error_500_title = "Internal Error";
 const char *error_500_form = "There was an unusual problem serving the requested line.\n";
 
+static constexpr int convert_hex(char ch) {
+    if (ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
+    if (ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
+    return ch;
+}
+
 // 设置fd为非阻塞
 int setnonblocking(int fd) {
     int old_option = fcntl(fd, F_GETFL);
@@ -121,8 +127,10 @@ HTTP_CODE http_conn::parse_request_line(char *text) {
     if (strcasecmp(method, "GET") == 0) {
         m_method = METHOD::GET;
         LOG_INFO("method: %s", method);
+    } else if (strcasecmp(method, "POST") == 0) {
+        m_method = METHOD::POST;
+        LOG_INFO("method: %s", method);
     } else {
-//        printf("暂时不处理其他请求方法.\n");
         LOG_INFO("暂时不处理其他请求方法");
         return HTTP_CODE::BAD_REQUEST;
     }
@@ -201,7 +209,6 @@ HTTP_CODE http_conn::parse_headers(char *text) {
             m_check_state = CHECK_STATE::CHECK_CONTENT;
             return HTTP_CODE::NO_REQUEST;
         }
-
         return HTTP_CODE::GET_REQUEST;
     } else if (strncasecmp(text, "Host:", 5) == 0) {
         // 匹配到了host
@@ -221,11 +228,81 @@ HTTP_CODE http_conn::parse_headers(char *text) {
         text += strspn(text, " \t");
         m_content_length = atol(text);
         LOG_DEBUG("content_length : %d", m_content_length);
+    } else if (strncasecmp(text, "Content-Type:", 13) == 0) {
+        text += 13;
+        text += strspn(text, " \t");
+        m_content_type = text;
+        LOG_DEBUG("content_type : %s", m_content_type);
     } else {
         printf("暂时不处理其他HTTP请求头部\n");
     }
 
     return HTTP_CODE::NO_REQUEST;
+}
+
+/**
+ * 解析post请求
+ */
+void http_conn::parse_post(char *text) {
+    if (m_method == METHOD::POST && strcasecmp(m_content_type, "application/x-www-form-urlencoded") == 0) {
+        parse_from_url_encoded(text);
+        // 判断是登录还是注册，登录则保存用户名和密码到数据库（这里暂时是文件），然后返回index页面，
+        // 注册则查询用户名和密码对不对，错误则返回错误页面，正确则返回index页面
+        bool isLogin = false;
+        if (strcasecmp(m_url, "/login.html") == 0) {
+            // 登录操作
+            isLogin = true;
+        }
+        if (user_verify(m_posts["username"], m_posts["password"], isLogin)) {
+            LOG_DEBUG("登录或注册成功");
+        } else {
+            LOG_DEBUG("登录或注册失败");
+        }
+    }
+}
+
+void http_conn::parse_from_url_encoded(char *text) {
+    int idx = m_checked_idx;
+//    string body = string(text);
+    LOG_DEBUG("url_encode : %s", text);
+    string key, value;
+    char ch;
+    int num = 0;
+    int j = 0, i = 0;
+    for (; i < m_content_length; ++i) {
+        ch = text[i];
+        switch (ch) {
+            case '=': {
+                key = string(text, j, i - j);
+                j = i + 1;
+                break;
+            }
+            case '+': {
+                text[i] = ' ';
+                break;
+            }
+            case '%': {
+                num = convert_hex(text[i + 1]) % 16 + convert_hex(text[i + 2]);
+                text[i + 1] = num % 10 + '0';
+                text[i + 2] = num / 10 + '0';
+                i += 2;
+            }
+            case '&': {
+                value = string(text, j, i - j);
+                j = i + 1;
+                m_posts[key] = value;
+                LOG_DEBUG("%s = %s", key.c_str(), value.c_str());
+                break;
+            }
+        }
+    }
+
+    if (m_posts.count(key) == 0 && j < i) {
+        value = string(text, j, i - j);
+        m_posts[key] = value;
+        LOG_DEBUG("%s = %s", key.c_str(), value.c_str());
+    }
+
 }
 
 /**
@@ -236,6 +313,12 @@ HTTP_CODE http_conn::parse_headers(char *text) {
  */
 HTTP_CODE http_conn::parse_content(char *text) {
     if (m_read_idx >= (m_content_length + m_checked_idx)) {
+        if (m_method == METHOD::POST && strcasecmp(m_content_type, "application/x-www-form-urlencoded") == 0) {
+            // 解析POST请求体
+            // TODO(heyjude):解析POST请求体以及用户验证
+            // 这里仅仅只是模拟登录和注册
+            parse_post(text);
+        }
         text[m_content_length] = '\0';
         return HTTP_CODE::GET_REQUEST;
     }
@@ -473,6 +556,7 @@ void http_conn::init() {
     m_url = nullptr;
     m_version = nullptr;
     m_host = nullptr;
+    m_content_type = nullptr;
     m_linger = false;
     m_content_length = 0;
 
@@ -496,6 +580,16 @@ void http_conn::process() {
         close_conn(true);
     }
     modfd(m_epollfd, m_sockfd, EPOLLOUT);
+}
+
+bool http_conn::user_verify(string &username, string &password, bool isLogin) {
+    // 直接模拟登录注册
+    if (username == "" || password == "") {
+        return false;
+    } else if (username == "username" && password == "password") {
+        return true;
+    }
+    return false;
 }
 
 

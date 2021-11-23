@@ -25,7 +25,11 @@
 #include <cstdarg> // va_start
 #include <sys/epoll.h> // EPOLLIN
 
+#include <unordered_map>
+
 #include "../logger.h"
+
+using namespace std;
 
 #define READ_BUFFER_SIZE 4096   // 读缓冲区大小
 #define WRITE_BUFFER_SIZE 2048  // 写缓冲区大小
@@ -120,6 +124,7 @@ private:
     char *m_host;   // 主机名
     bool m_linger;  // HTTP请求是否要求保持连接
     int m_content_length;   // HTTP请求的消息体的长度
+    char *m_content_type; // 表示content_type
 
     char m_real_file[FILENAME_LEN]; // 客户请求的目标文件的完整路径，其内容等于doc_root + m_url,doc_root是网站根目录
     char *m_file_address;   // 客户请求的目标文件被mmap到内存中的起始位置
@@ -131,6 +136,9 @@ private:
 
     char m_write_buf[WRITE_BUFFER_SIZE];    // 写缓冲区
     int m_write_idx;    // 写缓冲区中待发送的字节数
+
+    std::unordered_map<string, string> m_posts; // post请求体
+
 
 
 private:
@@ -152,6 +160,10 @@ private:
     bool add_content_length(int content_length);    // 填充内容长度
     bool add_linger();  // 填充Connection状态
     bool add_blank_line();  // 填充空行
+    void parse_post(char *text);    // 解析post请求
+    void parse_from_url_encoded(char *text);
+
+    bool user_verify(string &username, string &password, bool isLogin);
 };
 
 
