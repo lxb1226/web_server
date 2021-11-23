@@ -20,6 +20,7 @@
 
 #include "http_conn.h"
 #include "logger.h"
+#include "thread_pool.h"
 
 #define MAX_FD 65536
 #define MAX_EVENT_NUMBER 10000
@@ -44,6 +45,38 @@ void show_error(int connfd, const char *info) {
     send(connfd, info, strlen(info), 0);
     close(connfd);
 }
+
+void deal_listen(http_conn *users, int listenfd) {
+    struct sockaddr_in client_address;
+    socklen_t client_addrlength = sizeof(client_address);
+    int connfd = accept(listenfd, (struct sockaddr *) &client_address, &client_addrlength);
+    if (connfd < 0) {
+        printf("errno is: %d\n", errno);
+        return;
+    }
+    if (http_conn::m_user_count >= MAX_FD) {
+        show_error(connfd, "Internal server busy");
+        return;
+    }
+    // 初始化客户连接
+    LOG_DEBUG("start init client. connfd: %d, ip: %s", connfd, inet_ntoa(client_address.sin_addr));
+    users[connfd].init(connfd, client_address);
+}
+
+void deal_read(http_conn *client) {
+    if (client->read()) {
+        client->process();
+    } else {
+        client->close_conn(true);
+    }
+}
+
+void deal_write(http_conn *client) {
+    if (!client->write()) {
+        client->close_conn(true);
+    }
+}
+
 
 int main(int argc, char *argv[]) {
     if (argc <= 2) {
@@ -77,6 +110,14 @@ int main(int argc, char *argv[]) {
 
     ret = listen(listenfd, 5);
 
+    ThreadPool *threadPool = nullptr;
+    try {
+        threadPool = new ThreadPool(8);
+    } catch (...) {
+        LOG_DEBUG("创建线程池失败");
+        return 0;
+    }
+
     epoll_event events[MAX_EVENT_NUMBER];
 
     int epollfd = epoll_create(5);
@@ -92,43 +133,35 @@ int main(int argc, char *argv[]) {
             break;
         }
         LOG_DEBUG("start epoll number : %d\n", number);
+        LOG_DEBUG("用户数量为 : %d", users->m_user_count);
         for (int i = 0; i < number; i++) {
             int sockfd = events[i].data.fd;
             if (sockfd == listenfd) {
-                struct sockaddr_in client_address;
-                socklen_t client_addrlength = sizeof(client_address);
-                int connfd = accept(listenfd, (struct sockaddr *) &client_address, &client_addrlength);
-                if (connfd < 0) {
-                    printf("errno is: %d\n", errno);
-                    continue;
-                }
-                if (http_conn::m_user_count >= MAX_FD) {
-                    show_error(connfd, "Internal server busy");
-                    continue;
-                }
-                // 初始化客户连接
-                LOG_DEBUG("start init client. connfd: %d, ip: %s", connfd, inet_ntoa(client_address.sin_addr));
-                users[connfd].init(connfd, client_address);
+                // 处理监听事件
+                deal_listen(users, listenfd);
             } else if (events[i].events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR)) {
                 // 如果有异常，直接关闭连接
                 LOG_DEBUG("这里出现了异常，关闭连接");
                 users[sockfd].close_conn(true);
             } else if (events[i].events & EPOLLIN) {
                 // 根据读的结果，决定是否将任务添加到线程池还是关闭连接
-
-                if (users[sockfd].read()) {
-                    LOG_DEBUG("读取请求成功，处理请求");
-                    users[sockfd].process();
-                } else {
-                    LOG_DEBUG("读取请求失败，关闭连接");
-                    users[sockfd].close_conn(true);
-                }
+                threadPool->AddTask(std::bind(&deal_read, &users[sockfd]));
+//                if (users[sockfd].read()) {
+//                    LOG_DEBUG("读取请求成功，处理请求");
+////                    users[sockfd].process();
+//
+////                    threadPool->AddTask(std::bind(users[sockfd].process(), users[sockfd]));
+//                } else {
+//                    LOG_DEBUG("读取请求失败，关闭连接");
+//                    users[sockfd].close_conn(true);
+//                }
 
             } else if (events[i].events & EPOLLOUT) {
                 // 根据写的结果，决定是否关闭连接
-                if (!users[sockfd].write()) {
-                    users[sockfd].close_conn(true);
-                }
+                threadPool->AddTask(std::bind(&deal_write, &users[sockfd]));
+//                if (!users[sockfd].write()) {
+//                    users[sockfd].close_conn(true);
+//                }
             } else {
                 LOG_DEBUG("不做处理");
 //                printf("不做处理\n");
