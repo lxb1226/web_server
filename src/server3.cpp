@@ -21,6 +21,7 @@
 #include "http_conn.h"
 #include "logger.h"
 #include "thread_pool.h"
+#include "lst_timer.h"
 
 #define MAX_FD 65536
 #define MAX_EVENT_NUMBER 10000
@@ -46,7 +47,7 @@ void show_error(int connfd, const char *info) {
     close(connfd);
 }
 
-void deal_listen(http_conn *users, int listenfd) {
+void deal_listen(http_conn *users, int listenfd, sort_timer_lst *timer, int timeoutMs) {
     struct sockaddr_in client_address;
     socklen_t client_addrlength = sizeof(client_address);
     int connfd = accept(listenfd, (struct sockaddr *) &client_address, &client_addrlength);
@@ -61,6 +62,7 @@ void deal_listen(http_conn *users, int listenfd) {
     // 初始化客户连接
     LOG_DEBUG("start init client. connfd: %d, ip: %s", connfd, inet_ntoa(client_address.sin_addr));
     users[connfd].init(connfd, client_address);
+    // 添加定时结点
 }
 
 void deal_read(http_conn *client) {
@@ -110,6 +112,8 @@ int main(int argc, char *argv[]) {
 
     ret = listen(listenfd, 5);
 
+
+    // 创建线程池
     ThreadPool *threadPool = nullptr;
     try {
         threadPool = new ThreadPool(8);
@@ -117,6 +121,10 @@ int main(int argc, char *argv[]) {
         LOG_DEBUG("创建线程池失败");
         return 0;
     }
+
+    int timeoutMs = 60000;
+    // 创建定时器
+    sort_timer_lst *timer = new sort_timer_lst();
 
     epoll_event events[MAX_EVENT_NUMBER];
 
