@@ -21,7 +21,7 @@
 #include "http_conn.h"
 #include "logger.h"
 #include "thread_pool.h"
-#include "lst_timer.h"
+#include "heaptimer.h"
 
 #define MAX_FD 65536
 #define MAX_EVENT_NUMBER 10000
@@ -30,58 +30,71 @@ extern int addfd(int epollfd, int fd, bool one_host);
 
 extern int removefd(int epollfd, int fd);
 
-void addsig(int sig, void(handler)(int), bool restart = true) {
+void addsig(int sig, void(handler)(int), bool restart = true)
+{
     struct sigaction sa;
     memset(&sa, '\0', sizeof(sa));
     sa.sa_handler = handler;
-    if (restart) {
+    if (restart)
+    {
         sa.sa_flags |= SA_RESTART;
     }
     sigfillset(&sa.sa_mask);
     assert(sigaction(sig, &sa, NULL) != -1);
 }
 
-void show_error(int connfd, const char *info) {
+void show_error(int connfd, const char *info)
+{
     printf("%s", info);
     send(connfd, info, strlen(info), 0);
     close(connfd);
 }
 
-void deal_listen(http_conn *users, int listenfd, sort_timer_lst *timer, int timeoutMs) {
-    struct sockaddr_in client_address;
-    socklen_t client_addrlength = sizeof(client_address);
-    int connfd = accept(listenfd, (struct sockaddr *) &client_address, &client_addrlength);
-    if (connfd < 0) {
-        printf("errno is: %d\n", errno);
-        return;
-    }
-    if (http_conn::m_user_count >= MAX_FD) {
-        show_error(connfd, "Internal server busy");
-        return;
-    }
-    // 初始化客户连接
-    LOG_DEBUG("start init client. connfd: %d, ip: %s", connfd, inet_ntoa(client_address.sin_addr));
-    users[connfd].init(connfd, client_address);
-    // 添加定时结点
-}
+// void deal_listen(http_conn *users, int listenfd)
+// {
+//     struct sockaddr_in client_address;
+//     socklen_t client_addrlength = sizeof(client_address);
+//     int connfd = accept(listenfd, (struct sockaddr *)&client_address, &client_addrlength);
+//     if (connfd < 0)
+//     {
+//         printf("errno is: %d\n", errno);
+//         return;
+//     }
+//     if (http_conn::m_user_count >= MAX_FD)
+//     {
+//         show_error(connfd, "Internal server busy");
+//         return;
+//     }
+//     // 初始化客户连接
+//     LOG_DEBUG("start init client. connfd: %d, ip: %s", connfd, inet_ntoa(client_address.sin_addr));
+//     users[connfd].init(connfd, client_address);
+//     // 添加定时结点
+// }
 
-void deal_read(http_conn *client) {
-    if (client->read()) {
+void deal_read(http_conn *client)
+{
+    if (client->read())
+    {
         client->process();
-    } else {
+    }
+    else
+    {
         client->close_conn(true);
     }
 }
 
-void deal_write(http_conn *client) {
-    if (!client->write()) {
+void deal_write(http_conn *client)
+{
+    if (!client->write())
+    {
         client->close_conn(true);
     }
 }
 
-
-int main(int argc, char *argv[]) {
-    if (argc <= 2) {
+int main(int argc, char *argv[])
+{
+    if (argc <= 2)
+    {
         printf("usage: %s ip_address port_number \n", basename(argv[0]));
         return 1;
     }
@@ -107,24 +120,27 @@ int main(int argc, char *argv[]) {
     inet_pton(AF_INET, ip, &address.sin_addr);
     address.sin_port = htons(port);
 
-    ret = bind(listenfd, (struct sockaddr *) &address, sizeof(address));
+    ret = bind(listenfd, (struct sockaddr *)&address, sizeof(address));
     assert(ret >= 0);
 
     ret = listen(listenfd, 5);
 
-
     // 创建线程池
     ThreadPool *threadPool = nullptr;
-    try {
+    try
+    {
         threadPool = new ThreadPool(8);
-    } catch (...) {
+    }
+    catch (...)
+    {
         LOG_DEBUG("创建线程池失败");
         return 0;
     }
 
-    int timeoutMs = 60000;
     // 创建定时器
-    sort_timer_lst *timer = new sort_timer_lst();
+    HeapTimer *timer = new HeapTimer();
+
+    int timeoutMs = 60000;
 
     epoll_event events[MAX_EVENT_NUMBER];
 
@@ -134,45 +150,92 @@ int main(int argc, char *argv[]) {
     http_conn::m_epollfd = epollfd;
 
     LOG_DEBUG("start server on port : %d, ip : %s, listenfd : %d", port, inet_ntoa(address.sin_addr), listenfd);
-    while (true) {
-        int number = epoll_wait(epollfd, events, MAX_EVENT_NUMBER, -1);
-        if ((number < 0) && (errno != EINTR)) {
+    while (true)
+    {
+        int timeMs = -1;
+        if (timeoutMs > 0)
+        {
+            timeMs = timer->GetNextTick();
+        }
+        int number = epoll_wait(epollfd, events, MAX_EVENT_NUMBER, timeMs);
+        if ((number < 0) && (errno != EINTR))
+        {
             printf("epoll failure\n");
             break;
         }
         LOG_DEBUG("start epoll number : %d\n", number);
         LOG_DEBUG("用户数量为 : %d", users->m_user_count);
-        for (int i = 0; i < number; i++) {
+        for (int i = 0; i < number; i++)
+        {
             int sockfd = events[i].data.fd;
-            if (sockfd == listenfd) {
+            if (sockfd == listenfd)
+            {
                 // 处理监听事件
-                deal_listen(users, listenfd);
-            } else if (events[i].events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR)) {
+                struct sockaddr_in client_address;
+                socklen_t client_addrlength = sizeof(client_address);
+                int connfd = accept(listenfd, (struct sockaddr *)&client_address, &client_addrlength);
+                if (connfd < 0)
+                {
+                    printf("errno is: %d\n", errno);
+                    continue;
+                }
+                if (http_conn::m_user_count >= MAX_FD)
+                {
+                    show_error(connfd, "Internal server busy");
+                    continue;
+                }
+                // 初始化客户连接
+                //LOG_DEBUG("start init client. connfd: %d, ip: %s", connfd, inet_ntoa(client_address.sin_addr));
+                users[connfd].init(connfd, client_address);
+                // 添加定时结点
+                if (timeoutMs > 0)
+                {
+                    timer->add(connfd, timeoutMs, std::bind(&http_conn::close_conn, users[connfd], true));
+                }
+                LOG_INFO("client[%d] in!", connfd);
+            }
+            else if (events[i].events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR))
+            {
                 // 如果有异常，直接关闭连接
                 LOG_DEBUG("这里出现了异常，关闭连接");
                 users[sockfd].close_conn(true);
-            } else if (events[i].events & EPOLLIN) {
+            }
+            else if (events[i].events & EPOLLIN)
+            {
                 // 根据读的结果，决定是否将任务添加到线程池还是关闭连接
+                // 扩展时间
+                if (timeoutMs > 0)
+                {
+                    timer->adjust(sockfd, timeoutMs);
+                }
                 threadPool->AddTask(std::bind(&deal_read, &users[sockfd]));
-//                if (users[sockfd].read()) {
-//                    LOG_DEBUG("读取请求成功，处理请求");
-////                    users[sockfd].process();
-//
-////                    threadPool->AddTask(std::bind(users[sockfd].process(), users[sockfd]));
-//                } else {
-//                    LOG_DEBUG("读取请求失败，关闭连接");
-//                    users[sockfd].close_conn(true);
-//                }
-
-            } else if (events[i].events & EPOLLOUT) {
+                //                if (users[sockfd].read()) {
+                //                    LOG_DEBUG("读取请求成功，处理请求");
+                ////                    users[sockfd].process();
+                //
+                ////                    threadPool->AddTask(std::bind(users[sockfd].process(), users[sockfd]));
+                //                } else {
+                //                    LOG_DEBUG("读取请求失败，关闭连接");
+                //                    users[sockfd].close_conn(true);
+                //                }
+            }
+            else if (events[i].events & EPOLLOUT)
+            {
+                // 扩展时间
+                if (timeoutMs > 0)
+                {
+                    timer->adjust(sockfd, timeoutMs);
+                }
                 // 根据写的结果，决定是否关闭连接
                 threadPool->AddTask(std::bind(&deal_write, &users[sockfd]));
-//                if (!users[sockfd].write()) {
-//                    users[sockfd].close_conn(true);
-//                }
-            } else {
-                LOG_DEBUG("不做处理");
-//                printf("不做处理\n");
+                //                if (!users[sockfd].write()) {
+                //                    users[sockfd].close_conn(true);
+                //                }
+            }
+            else
+            {
+                LOG_DEBUG("不期待的事件");
+                //                printf("不做处理\n");
             }
         }
     }
@@ -180,6 +243,7 @@ int main(int argc, char *argv[]) {
     close(epollfd);
     close(listenfd);
     delete[] users;
-//    delete pool;
+    delete threadPool;
+    delete timer;
     return 0;
 }
