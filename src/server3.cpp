@@ -1,8 +1,8 @@
 /**
-*  @DATE: 2021/11/8 22:37
-*  @author: heyjude
-*  @email: 1944303766@qq.com
-*/
+ *  @DATE: 2021/11/8 22:37
+ *  @author: heyjude
+ *  @email: 1944303766@qq.com
+ */
 //
 // Created by heyjude on 2021/11/8.
 //
@@ -50,27 +50,6 @@ void show_error(int connfd, const char *info)
     close(connfd);
 }
 
-// void deal_listen(http_conn *users, int listenfd)
-// {
-//     struct sockaddr_in client_address;
-//     socklen_t client_addrlength = sizeof(client_address);
-//     int connfd = accept(listenfd, (struct sockaddr *)&client_address, &client_addrlength);
-//     if (connfd < 0)
-//     {
-//         printf("errno is: %d\n", errno);
-//         return;
-//     }
-//     if (http_conn::m_user_count >= MAX_FD)
-//     {
-//         show_error(connfd, "Internal server busy");
-//         return;
-//     }
-//     // 初始化客户连接
-//     LOG_DEBUG("start init client. connfd: %d, ip: %s", connfd, inet_ntoa(client_address.sin_addr));
-//     users[connfd].init(connfd, client_address);
-//     // 添加定时结点
-// }
-
 void deal_read(http_conn *client)
 {
     if (client->read())
@@ -103,6 +82,8 @@ int main(int argc, char *argv[])
     // 忽略SIGPIPE信号
     addsig(SIGPIPE, SIG_IGN);
 
+    // 创建Log
+    Log::Instance()->init(0, "./log", ".log");
     // 预先为每个可能的客户连接分配一个http_conn对象
     http_conn *users = new http_conn[MAX_FD];
     assert(users);
@@ -153,10 +134,10 @@ int main(int argc, char *argv[])
     while (true)
     {
         int timeMs = -1;
-        if (timeoutMs > 0)
-        {
-            timeMs = timer->GetNextTick();
-        }
+        // if (timeoutMs > 0)
+        // {
+        //     timeMs = timer->GetNextTick();
+        // }
         int number = epoll_wait(epollfd, events, MAX_EVENT_NUMBER, timeMs);
         if ((number < 0) && (errno != EINTR))
         {
@@ -185,13 +166,13 @@ int main(int argc, char *argv[])
                     continue;
                 }
                 // 初始化客户连接
-                //LOG_DEBUG("start init client. connfd: %d, ip: %s", connfd, inet_ntoa(client_address.sin_addr));
+                LOG_DEBUG("start init client. connfd: %d, ip: %s", connfd, inet_ntoa(client_address.sin_addr));
                 users[connfd].init(connfd, client_address);
                 // 添加定时结点
-                if (timeoutMs > 0)
-                {
-                    timer->add(connfd, timeoutMs, std::bind(&http_conn::close_conn, users[connfd], true));
-                }
+                // if (timeoutMs > 0)
+                // {
+                //     timer->add(connfd, timeoutMs, std::bind(&http_conn::close_conn, users[connfd], true));
+                // }
                 LOG_INFO("client[%d] in!", connfd);
             }
             else if (events[i].events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR))
@@ -204,10 +185,10 @@ int main(int argc, char *argv[])
             {
                 // 根据读的结果，决定是否将任务添加到线程池还是关闭连接
                 // 扩展时间
-                if (timeoutMs > 0)
-                {
-                    timer->adjust(sockfd, timeoutMs);
-                }
+                // if (timeoutMs > 0)
+                // {
+                //     timer->adjust(sockfd, timeoutMs);
+                // }
                 threadPool->AddTask(std::bind(&deal_read, &users[sockfd]));
                 //                if (users[sockfd].read()) {
                 //                    LOG_DEBUG("读取请求成功，处理请求");
@@ -222,10 +203,10 @@ int main(int argc, char *argv[])
             else if (events[i].events & EPOLLOUT)
             {
                 // 扩展时间
-                if (timeoutMs > 0)
-                {
-                    timer->adjust(sockfd, timeoutMs);
-                }
+                // if (timeoutMs > 0)
+                // {
+                //     timer->adjust(sockfd, timeoutMs);
+                // }
                 // 根据写的结果，决定是否关闭连接
                 threadPool->AddTask(std::bind(&deal_write, &users[sockfd]));
                 //                if (!users[sockfd].write()) {

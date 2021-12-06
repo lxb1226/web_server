@@ -2,7 +2,7 @@
 
 void HeapTimer::siftup_(size_t i)
 {
-    assert(i >= 0 && heap_.size());
+    assert(i >= 0 && i < heap_.size());
     size_t j = (i - 1) / 2;
     while (j >= 0)
     {
