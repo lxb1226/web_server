@@ -18,7 +18,7 @@ public:
 
     static Log *Instance();
 
-    void write(int level, const char *format, ...);
+    void write(const char* filename, int fileLine, const char* funcName, int level, const char *format, ...);
 
     void flush();
 
@@ -61,7 +61,7 @@ private:
         Log *log = Log::Instance();                    \
         if (log->isOpen() && log->getLevel() <= level) \
         {                                              \
-            log->write(level, format, ##__VA_ARGS__);  \
+            log->write(__FILE__, __LINE__, __FUNCTION__,level, format, ##__VA_ARGS__);  \
             log->flush();                              \
         }                                              \
     } while (0);

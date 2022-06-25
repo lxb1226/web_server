@@ -175,7 +175,7 @@ int main(int argc, char *argv[])
             printf("epoll failure\n");
             break;
         }
-        LOG_DEBUG("start epoll number : %d\n", number);
+        LOG_DEBUG("start epoll number : %d", number);
         LOG_DEBUG("用户数量为 : %d", users->m_user_count);
         for (int i = 0; i < number; i++)
         {

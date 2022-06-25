@@ -68,7 +68,9 @@ void Log::init(int level = 1, const char *path, const char *suffix)
     }
 }
 
-void Log::write(int level, const char *format, ...)
+// 日志格式:
+// [logLevel][time][filename:funcName:fileLine]: msg
+void Log::write(const char* filename, int fileLine, const char* funcName, int level, const char *format, ...)
 {
     struct timeval now = {0, 0};
     gettimeofday(&now, nullptr);
@@ -110,9 +112,12 @@ void Log::write(int level, const char *format, ...)
         unique_lock<mutex> locker(mtx_);
         lineCount_++;
         
-        int n = snprintf(buff_.BeginWrite(), 128, "%d-%02d-%02d %02d:%02d:%02d.%06ld", t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec, now.tv_usec);
-        buff_.HasWritten(n);
         AppendLogLevelTitle_(level);
+        int n = snprintf(buff_.BeginWrite(), 128, "[%d-%02d-%02d %02d:%02d:%02d.%06ld]", t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec, now.tv_usec);
+        buff_.HasWritten(n);
+
+        n = snprintf(buff_.BeginWrite(), 128, "[%s:%s:%d]: ", filename, funcName, fileLine);
+        buff_.HasWritten(n);
 
         va_start(vaList, format);
         int m = vsnprintf(buff_.BeginWrite(), buff_.WritableBytes(), format, vaList);
@@ -132,23 +137,23 @@ void Log::AppendLogLevelTitle_(int level)
     {
     case 0:
         // 写debug
-        buff_.Append("[debug]: ", 9);
+        buff_.Append("[debug]", 7);
         break;
     case 1:
         // 写info
-        buff_.Append("[info]: ", 9);
+        buff_.Append("[info ]", 7);
         break;
     case 2:
         // 写warn
-        buff_.Append("[warn]: ", 9);
+        buff_.Append("[warn ]", 7);
         break;
     case 3:
         // 写error
-        buff_.Append("[error]: ", 9);
+        buff_.Append("[error]", 7);
         break;
     default:
         // 写info
-        buff_.Append("[info]: ", 9);
+        buff_.Append("[info ]", 7);
         break;
     }
 }
