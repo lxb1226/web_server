@@ -229,7 +229,7 @@ std::string http_request::get_post(const char *key) const
     return "";
 }
 
-static int ConvertHex(char ch)
+int http_request::ConvertHex(char ch)
 {
     if (ch >= 'A' && ch <= 'F')
         return ch - 'A' + 10;
@@ -238,7 +238,7 @@ static int ConvertHex(char ch)
     return ch;
 }
 
-static bool user_verify(const std::string &name, const std::string &pwd, bool isLogin)
+bool http_request::user_verify(const std::string &name, const std::string &pwd, bool isLogin)
 {
     if (name == "" || pwd == "")
         return false;
