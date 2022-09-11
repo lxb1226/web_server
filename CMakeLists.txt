@@ -20,7 +20,7 @@ set(SOURCES
     ${PROJECT_SOURCE_DIR}/src/log/logger.cpp
     ${PROJECT_SOURCE_DIR}/src/poller/epoller.cpp
     ${PROJECT_SOURCE_DIR}/src/server/server.cpp
-    ${PROJECT_SOURCE_DIR}/src/timer/heaptimer.cpp)
+    ${PROJECT_SOURCE_DIR}/src/timer/heaptimer.cpp src/pool/unbound_queue.h src/pool/task_warpper.h src/common.h src/pool/thread_base.h src/pool/thread_primary.h src/pool/work_steal_queue.h src/status.h src/pool/thread_secondary.h src/pool/thread_pool_config.h src/pool/task_group.h)
 
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14 -g -ggdb")
 include_directories(include src/buffer src/http src/log src/poller src/pool src/server src/timer)
